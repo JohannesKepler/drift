@@ -1,6 +1,7 @@
 var model = {
 	uid : 0,
 	ship : {
+		class : 'ship',
 		mass : 1,
 		theta : 0,
 		phi : 0,
@@ -22,26 +23,52 @@ var model = {
 	},
 	level : 0
 };
+model.destroyPlanet = function(planet) {
+	var planet_idx = this.planets.indexOf(planet);
+	if(planet_idx === -1) { return; }
+
+	this.planets.splice(planet_idx, 1);
+	for(var i=0; i<20; i++) {
+		var angle = Math.random()*6.28;
+		var v = (1+Math.random())/2.0;
+		this.particles.push({
+			x : (planet.x + 32*Math.cos(angle)),
+			y : (planet.y + 32*Math.sin(angle)),
+			lifespan : Math.random()*800,
+			v : [v*Math.cos(angle), v*Math.sin(angle)]
+		})
+	}
+}
+
+model.destroyCloud = function(cloud) {
+	var cloud_idx = this.clouds.indexOf(cloud);
+	if(cloud_idx === -1) { return; }
+
+	this.clouds.splice(cloud_idx, 1);
+	for(var i=0; i<20; i++) {
+		var angle = Math.random()*6.28;
+		var v = (1+Math.random())/2.0;
+		this.particles.push({
+			x : (cloud.x + 32*Math.cos(angle)),
+			y : (cloud.y + 32*Math.sin(angle)),
+			lifespan : Math.random()*800,
+			v : [v*Math.cos(angle), v*Math.sin(angle)]
+		})
+	}
+}
 
 model.update = function(ts) {
+
+		// First run through
 		if(this.ts === null) {
 			this.ts = ts;
 			return;
 		}
-
-		switch(this.state) {
-			case 'dying':
-				if(this.particles.length == 0) {
-					this.state = 'dead';
-					return;
-				}
-			case 'playing':
-			break;
-			default:
-				this.ts = null; return;
-			break;
-		}
-
+		// Update time
+		var	dt = ts - this.ts;
+		this.ts = ts;
+		
+		// Wizards only, fools
 		this.particles.forEach((particle, idx) => {
 			particle.x += particle.v[0]*dt;
 			particle.y += particle.v[1]*dt;
@@ -51,14 +78,31 @@ model.update = function(ts) {
 			}
 		});
 
+		// Fade out the title
+		if(this.title.lifespan > 0) {
+			this.title.lifespan -= dt;
+		}
+		
+		switch(this.state) {
+			case 'dying':
+				if(this.particles.length == 0) {
+					this.state = 'dead';
+					return;
+				}
+				break;
+			case 'playing':
+			break;
+			default:
+				this.ts = null; return;
+			break;
+		}
+
+		
+
 		// If dying, only process particles
 		if(this.state === 'dying') { return; }
 
 		var ship = this.ship;
-
-		// Update time
-		dt = ts - this.ts;
-		this.ts = ts;
 
 		// Projectile-planet and Projectile-fragment collision
 		this.projectiles.forEach((projectile, projectile_idx) => {
@@ -189,8 +233,8 @@ model.update = function(ts) {
 			var f = G*ship.mass*planet.mass/(r*r);
 			var a = f*ship.mass;
 			var dv = [ru[0]*a*dt, ru[1]*a*dt]
-			ship.v[0] += dv[0]
-			ship.v[1] += dv[1]
+			ship.vx += dv[0]
+			ship.vy += dv[1]
 		});
 
 		this.fragments.forEach(fragment => {
@@ -199,8 +243,8 @@ model.update = function(ts) {
 			var f = G*ship.mass*fragment.mass/(r*r);
 			var a = f*ship.mass;
 			var dv = [ru[0]*a*dt, ru[1]*a*dt]
-			ship.v[0] += dv[0]
-			ship.v[1] += dv[1]
+			ship.vx += dv[0]
+			ship.vy += dv[1]
 		});
 
 		this.fragments.forEach(fragment => {
@@ -210,14 +254,14 @@ model.update = function(ts) {
 
 		this.clouds.forEach(cloud => {
 			if(dist(ship, cloud) < 32) {
-				ship.v[0] = ship.v[0] * (1-cloud.drag)
-				ship.v[1] = ship.v[1] * (1-cloud.drag)
+				ship.vx = ship.vx * (1-cloud.drag)
+				ship.vy = ship.vy * (1-cloud.drag)
 			}
 		});
 
 		// Move the ship 
-		ship.x += ship.v[0]*dt;
-		ship.y += ship.v[1]*dt;
+		ship.x += ship.vx*dt;
+		ship.y += ship.vy*dt;
 
 		// Projectile motion
 		this.projectiles.forEach(projectile => {
@@ -227,11 +271,6 @@ model.update = function(ts) {
 
 		// Ship rotation
 		this.ship.phi += this.ship.rotate*dt;
-
-		// Fade out the title
-		if(this.title.lifespan > 0) {
-			this.title.lifespan -= dt;
-		}
 
 		this.portals.forEach(portal => {
 			if(portal.tenant) {
@@ -335,37 +374,101 @@ model.loadLevels = function(levels, startLevel) {
 	this.loadLevel(this.levels[this.level]);
 }
 
+model.addPlanet = function(planetData) {
+	var newPlanet = Object.assign({}, planetData);
+	newPlanet.class = 'planet';
+	this.planets.push(newPlanet)
+}
+
+model.addCloud = function(cloudData) {
+	var newCloud = Object.assign({}, cloudData);
+	newCloud.class = 'cloud';
+	this.clouds.push(newCloud)
+}
+
+model.getProperties = function(obj) {
+	switch(obj['class']) {
+		case undefined:
+			return []
+			break;
+		case 'planet':
+			switch(obj.type) {
+				case 'rock':
+					return ['x','y','mass'];
+					break;
+				case 'cracked':
+					return ['x','y', 'mass', 'angle'];
+					break;
+				default:
+					return ['x','y','mass'];
+					break;
+			}
+			break;
+		case 'cloud':
+			return ['x','y','drag'];
+			break;
+		case 'goal':
+			return ['x','y'];
+			break;
+		case 'ship':
+			return ['x','y', 'vx','vy'];
+			break;
+	}
+}
+
 model.loadLevel = function(level) {
-	this.planets = [];
 	this.fragments = [];
 	this.projectiles = [];
 	this.particles = [];
 	this.portals = level.portals || [];
 
-	level.planets.forEach(planet => {
-		this.planets.push(planet);
+	this.planets = [];
+	(level.planets || []).forEach(planet => {
+		this.addPlanet(planet);
 	})
 
 	this.clouds = [];
 	(level.clouds || []).forEach(cloud => {
-		this.clouds.push(cloud);
+		this.addCloud(cloud);
 	});
 
-	//this.planets = level.planets;
-	this.goal = level.goal;
+	this.goal = Object.assign({}, level.goal);
+	
 	this.ship.x = level.ship.x;
 	this.ship.y = level.ship.y;
-	if(level.ship.v) {
-		this.ship.v = [level.ship.v[0], level.ship.v[1]];
-	}
-
+	this.ship.vx = level.ship.vx || 0;
+	this.ship.vy = level.ship.vy || 0;	
 	this.ship.theta = level.ship.theta || 0;
 	this.ship.phi = level.ship.phi || 0;
 	this.ship.mass = level.ship.mass || 1.0;
 	this.title.text = level.name;
 	this.title.lifespan = 3000;
 }
+model.getCurrentLevelState = function() {
+	var state = {
+		planets : [],
+		portals : [],
+		clouds : [],
+		name : [],
+		goal : null,
+		ship : null,
+		name : 'Untitled'
+	};
+	this.planets.forEach(planet => {
+		state.planets.push(Object.assign({}, planet));
+	})
+	this.portals.forEach(portal => {
+		state.portals.push(Object.assign({}, portal));
+	})
+	this.clouds.forEach(cloud => {
+		state.clouds.push(Object.assign({}, cloud));
+	})
+	state.name = this.title.text;
+	state.goal = Object.assign({}, this.goal);
+	state.ship = Object.assign({}, this.ship);
+	return state;
 
+}
 model.nextLevel = function() {
 	this.level = (this.level + 1) % this.levels.length;
 	this.loadLevel(this.levels[this.level]);
@@ -395,3 +498,45 @@ model.getUID = function() {
 	this.uid += 1;
 	return this.uid;
 }
+
+model.pause = function() {
+	this.savedState = this.state;
+	this.state = 'paused';
+}
+
+model.resume = function() {
+	this.state = this.savedState;
+}
+
+model.saveCurrentLevelState = function() {
+	this.levels[this.level] = this.getCurrentLevelState();
+}
+
+model.newPlanet = function(x,y,mass,type) {
+	switch(type) {
+		case 'planet':
+			var newPlanet = {x:x,y:y,mass:mass,type:'planet'}
+			this.addPlanet(newPlanet);
+			this.sparkle(newPlanet);
+			break;
+		case 'cracked':
+			var newPlanet = {x:x,y:y,mass:mass,type:'cracked',angle:0, v: 0.05}
+			this.addPlanet(newPlanet);			
+			this.sparkle(newPlanet);
+			break;
+
+		case 'rock':
+			var newPlanet = {x:x,y:y,mass:mass,type:'rock'}
+			this.addPlanet(newPlanet);			
+			this.sparkle(newPlanet);
+			break;
+
+	}
+}
+
+model.newCloud = function(x,y,drag) {
+	var newCloud = {x:x,y:y,drag:drag}
+	this.clouds.push(newCloud);
+	this.sparkle(newCloud);
+}
+
